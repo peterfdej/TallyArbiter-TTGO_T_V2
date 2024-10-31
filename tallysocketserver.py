@@ -70,7 +70,6 @@ while True:
             def on_messaging(messagetype, socketID, message):
                 global messageresponse
                 global usermessage
-                print("Rensonse from TallyArbiter chat: " + message)
                 if (message[0] != "#"): #do nothing when command is echoed
                     messageresponse = '{"' + messagetype[:2] + '":"' + message + '"}' #first 2 characters of messagetype, JSON format
                     usermessage = messageresponse #parse to notify_users()
@@ -149,9 +148,7 @@ while True:
         async def notify_users(): #there are 2 clients, Companion and local websocket client
             if USERS:
                 message = users_event()
-                print("notify_users: " + message)
                 for user in USERS:
-                    print("user send")
                     await user.send(message.strip())
 
         async def register(websocket):
@@ -165,21 +162,14 @@ while True:
 
         async def Tally(websocket, path):
             global messagecmd
-            global messageresponse
             await register(websocket)
             try:
                 async for message in websocket:
-                    #await notify_users()
                     try:
                         print("Server received message: " + message)
                         if (message[0] == "#" or message[0] != "{"):
-                            messagecmd = message # for process_loop(), send to TallyArbiter chatbox
-                            print("#if")
-                        #if (message[0] != "{"):
-                        #    messagecmd = message
-                            #await notify_users()
+                            messagecmd = message # for process_loop(), send to TallyArbiter chatbox, except response
                         else:
-                            print("#else")
                             await notify_users()
                     except:
                         await websocket.send("Socket error: 13 – Wrong message type")
