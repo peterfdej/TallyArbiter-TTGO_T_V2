@@ -37,7 +37,7 @@ while True:
             @sio.event
             def connect():
                 print("Connected to Tally Arbiter server.")
-                sio.emit("listenerclient_connect",{"deviceId": "","listenerType": "socket_","canBeReassigned": True,"canBeFlashed": False,"supportsChat": True})
+                sio.emit("listenerclient_connect",{"deviceId": "ed34bacd","listenerType": "socket_","canBeReassigned": False,"canBeFlashed": False,"supportsChat": True})
 
             @sio.event
             def connect_error(data):
@@ -64,14 +64,16 @@ while True:
             @sio.on("reassign")
             def on_reassign(oldDeviceId, newDeviceId, gpoGroupId):
                 print("Reassigning " + " from DeviceID: " + oldDeviceId + " to DeviceID: " + newDeviceId)
-                sio.emit("listener_reassign_object", (oldDeviceId, newDeviceId));
+                sio.emit("listener_reassign_object", data=(oldDeviceId, newDeviceId))
 
             @sio.on("messaging") #receive response from Tally listener
             def on_messaging(messagetype, socketID, message):
                 global messageresponse
                 global usermessage
-                messageresponse = '{"' + messagetype[:2] + '":"' + message + '"}' #first 2 characters of messagetype, JSON format
-                usermessage = messageresponse #parse to notify_users()
+                print("Rensonse from TallyArbiter chat: " + message)
+                if (message[0] != "#"): #do nothing when command is echoed
+                    messageresponse = '{"' + messagetype[:2] + '":"' + message + '"}' #first 2 characters of messagetype, JSON format
+                    usermessage = messageresponse #parse to notify_users()
 
             def server_connect(url):
                 try:
@@ -86,6 +88,7 @@ while True:
                 print("Tally Arbiter socket Listener Running. Press CTRL-C to exit.")
                 try:
                     server_connect("http://127.0.0.1:4455") #local TallyArbiter server
+                    #server_connect("http://192.168.178.23:4455")
                 except KeyboardInterrupt:
                     print("Exiting Tally Arbiter socket Listener.")
                     exit(0)
@@ -109,8 +112,8 @@ while True:
 #websocket client       
         def notify_process():
             def on_message(ws, message):
-                print("Client message: ",message)
-
+                print("Client received message: ",message)
+                
             def on_error(ws, error):
                 print("Client error")
                 print(error)
@@ -129,6 +132,7 @@ while True:
                 thread.start_new_thread(run, ())
 
             if __name__ == "__main__":
+                time.sleep(3)   #some delay for starting socketserver first
                 websocket_c.enableTrace(False)
                 ws = websocket_c.WebSocketApp("ws://" + serverclient + ":" + str(port),
                     on_message = on_message,
@@ -145,7 +149,9 @@ while True:
         async def notify_users(): #there are 2 clients, Companion and local websocket client
             if USERS:
                 message = users_event()
+                print("notify_users: " + message)
                 for user in USERS:
+                    print("user send")
                     await user.send(message.strip())
 
         async def register(websocket):
@@ -163,12 +169,17 @@ while True:
             await register(websocket)
             try:
                 async for message in websocket:
-                    await notify_users()
+                    #await notify_users()
                     try:
-                        print("Received message: " + message)
-                        if (message[0] == "#"):
-                            messagecmd = message # for process_loop()
+                        print("Server received message: " + message)
+                        if (message[0] == "#" or message[0] != "{"):
+                            messagecmd = message # for process_loop(), send to TallyArbiter chatbox
+                            print("#if")
+                        #if (message[0] != "{"):
+                        #    messagecmd = message
+                            #await notify_users()
                         else:
+                            print("#else")
                             await notify_users()
                     except:
                         await websocket.send("Socket error: 13 – Wrong message type")
