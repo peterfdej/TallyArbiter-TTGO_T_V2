@@ -12,7 +12,10 @@ include LANC interface.
 zoom and record control with PTZOptics APP 
 (record on/off = Preset 7 and 8) 
 In messaging TallyArbiter #recon or #recoff for all listenerdevices
-#xxz-7 zoom command  #xxr+ record command (xx = firt 2 characters chipid) for specific listenerdevice
+For specific listenerdevice:
+#xxz-t, xxz+t zoom command (xx = firt 2 characters devicername, t = zoomtime 2 ,3 ,4, 5, 6, 7, 8 or 9)
+t = 1, start zoom, t = 0, stop zoom
+#xxr+ record command  
 #########################################################################################
 */
 #include <Arduino.h>
@@ -50,7 +53,7 @@ PinButton btnbottom(0); //bottom button, screen on/off
 Preferences preferences;
 
 long previousMillis = 0;
-long interval = 10000; //interval check LANC connection
+long interval = 5000; //interval check LANC connection and recording state
 
 //Tally Arbiter Server
 char tallyarbiter_host[40]; //IP address of the Tally Arbiter Server
@@ -94,6 +97,7 @@ int zoomt = 0;
 int zoomw = 0;
 bool recordon = 0;
 bool recordoff = 0;
+bool recording = 0;
 bool lancconnect = 0;
 int zoomtime;
 TaskHandle_t zoomhandle;
@@ -117,6 +121,7 @@ String actualColor = "";
 int actualPriority = 0;
 bool mode_preview = false;  
 bool mode_program = false;
+bool tallyconnected = 0;
 
 //General Variables
 bool networkConnected = false;
@@ -141,6 +146,8 @@ void setup(void) {
   pinMode(PinLANC, INPUT_PULLUP); //listens to the LANC line
   pinMode(PinCMD, OUTPUT); //writes to the LANC line
   digitalWrite(PinCMD, LOW); //set LANC line to +5V
+  #else
+  setCpuFrequencyMhz(80);    //Save battery by turning down the CPU clock
   #endif
 
   pinMode(led_blue, OUTPUT);
@@ -150,7 +157,7 @@ void setup(void) {
   pinMode(led_preview, OUTPUT);
 
   logger("Initializing TTGO.", "info-quiet");
-  setCpuFrequencyMhz(80);    //Save battery by turning down the CPU clock
+ 
   btStop();                  //Save battery by turning off BlueTooth
   
   #if LANC_INTERFACE
@@ -229,14 +236,17 @@ void loop() {
   if(portalRunning){
     wm.process();
   }
+  socket.loop();
   #if LANC_INTERFACE
   unsigned long currentMillis = millis();
-  if(currentMillis - previousMillis > interval) {
-    previousMillis = currentMillis;
-    lanccheck();
+  if (tallyconnected){
+    if(currentMillis - previousMillis > (interval)) {
+      previousMillis = currentMillis;
+      lanccheck();
+      recordcheck();
+    }
   }
   #endif
-  socket.loop();
   btntop.update();
   btnbottom.update();
   showVoltage();
@@ -419,6 +429,9 @@ void showVoltage() {
           cleartftscreen(TFT_BLACK, 2);
           tft.setTextColor(TFT_WHITE);
           tft.println("Battery level low");
+          tft.println(v); //for debug
+          tft.println(battery_voltage);
+          delay(5000);
           intosleepmode();
         }
     }
@@ -427,7 +440,6 @@ void showVoltage() {
 #if LANC_INTERFACE
 //****************************************
 // LANC part
-
 void lanccheck() {
   while (pulseIn(PinLANC, HIGH) < 5000) {
     if (pulseIn(PinLANC, HIGH) == 0) {  //timeout 1 sec, nothing connected
@@ -437,6 +449,19 @@ void lanccheck() {
     else {
       lancconnect = 1;
       return;
+    }
+  }
+}
+
+void recordcheck() {
+  if (lancconnect){
+    if (statuscode() == 0xFB && recording == 0) { //local recording on
+      recording = 1;
+      SendMessage("Recording on");
+    }
+    else if (statuscode() == 0xEB && recording == 1) { //local recording off
+      recording = 0;
+      SendMessage("Recording off");
     }
   }
 }
@@ -495,6 +520,7 @@ void recordstart() {
     tft.setCursor(0, 30);
     tft.println("Recording on");
     SendMessage("Recording on");
+    recording = 1;
     delay(1000);
     if (statuscode() == 0xEB) {
       sendCMD(typeVTR, B00110011); //send command a second time
@@ -517,6 +543,7 @@ void recordstop() {
     tft.setCursor(0, 30);
     tft.println("Recording off");
     SendMessage("Recording off");
+    recording = 0;
     delay(1000);
     if (statuscode() == 0xFB){
       sendCMD(typeVTR, B00110011); //send command a second time
@@ -926,6 +953,7 @@ void socket_Disconnected() {
   digitalWrite(led_blue, LOW);
   cleartftscreen(TFT_BLACK, 2);
   logger("Disconnected from   TallyArbiter!", "info");
+  tallyconnected = 0;
   delay(2000);
   digitalWrite(led_blue, HIGH);
 }
@@ -933,6 +961,7 @@ void socket_Disconnected() {
 void socket_Connected(const char * payload, size_t length) {
   logger("Connected to Tally Arbiter server.", "info");
   logger("DeviceId: " + DeviceId, "info-quiet");
+  tallyconnected = 1;
   digitalWrite(led_blue, LOW);
   tft.fillScreen(TFT_BLACK);
   String deviceObj = "{\"deviceId\": \"" + DeviceId + "\", \"listenerType\": \"" + listenerDeviceName.c_str() + "\", \"canBeReassigned\": true, \"canBeFlashed\": true, \"supportsChat\": true }";
@@ -1033,23 +1062,40 @@ void socket_Messaging(String payload) {
       }
       //Serial.println(listenerDeviceName.substring(7,9));
       else if (message.length() <= 6 && message.length() >=5) { // #xxz-7 zoom command  #xxr+ record command
-        if (message.substring(1,3) ==  listenerDeviceName.substring(7,9)){ //first 2 character chipid
+        if (message.substring(1,3) ==  DeviceName.substring(0,2)){ //xx = first 2 characters devicename
           if (message.substring(3,5) == "z-") {
             zoomtime = (message.substring(5, 6)).toInt();
-            for (int i = 0; i <= zoomtime; i++) {
-              zoomw = 5;
-              delay(200);
+            if (zoomtime == 0){
+              zoomw = 0;
             }
-            zoomw = 0;
+            else if (zoomtime == 1){
+              zoomw = 5;
+            }
+            else {
+              for (int i = 0; i <= zoomtime; i++) {
+                zoomw = 5;
+                delay(200);
+              }
+              zoomw = 0;
+            }
+            
           }
           else if (message.substring(3,5) == "z+") {
             zoomtime = (message.substring(5, 6)).toInt();
-            for (int i = 0; i <= zoomtime; i++) {
-              zoomt = 5;
-              delay(200);
+            if (zoomtime == 0){
+              zoomt = 0;
             }
-            zoomt = 0;;
-         }
+            else if (zoomtime == 1){
+              zoomt = 5;
+            }
+            else {
+              for (int i = 0; i <= zoomtime; i++) {
+                zoomt = 5;
+                delay(200);
+              }
+              zoomt = 0;;
+            }
+          }
           else if (message.substring(3,5) == "r+") {
             recordstart();
           }
