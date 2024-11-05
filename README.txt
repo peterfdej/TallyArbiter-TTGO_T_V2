@@ -5,3 +5,5 @@ Bitfocus Companion users can use the visca (visca PTZoptics) connection for the 
 
 The case is a bit larger to hold the extra pcb and battery and I redesigned the front.
 The LANC connection has a loop through, so you also can attach a remote control.
+
+You can use the tallysocketserver.py on a TallyArbiter server for communication between Bitfocus Companion and the chatbox of TallyArbiter to send and receive commands to/from a Sony camera.
