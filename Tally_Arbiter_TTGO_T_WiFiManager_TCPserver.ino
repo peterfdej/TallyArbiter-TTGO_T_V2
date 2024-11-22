@@ -43,6 +43,7 @@ t = 1, start zoom, t = 0, stop zoom
 
 float battery_voltage;
 String voltage;
+
 int vref = 1100;
 int batteryLevel = 100;
 int barLevel = 0;
@@ -114,6 +115,7 @@ String DeviceId = "unassigned";
 String DeviceName = "Unassigned";
 String LastMessage = "";
 String listenerDeviceName = "TTGO_T-1";
+String boxnaam = "";
 
 String prevType = ""; // reduce display flicker by storing previous state
 String actualType = "";
@@ -172,8 +174,14 @@ void setup(void) {
   );
   #endif
 
-  uint64_t chipid = ESP.getEfuseMac();
-  listenerDeviceName = "TTGO_T-" + String((uint16_t)(chipid>>32)) + String((uint32_t)chipid);
+  //uint64_t chipid = ESP.getEfuseMac();
+  //listenerDeviceName = "TTGO_T-" + String((uint16_t)(chipid>>32)) + String((uint32_t)chipid);
+  uint8_t baseMac[6];
+  char macchar[6];
+  esp_read_mac(baseMac, ESP_MAC_WIFI_STA);
+  sprintf(macchar, "%02X%02X%02X", baseMac[3], baseMac[4], baseMac[5]);
+  listenerDeviceName = "T-" + String(macchar);
+
 
   tft.init();
   tft.setRotation(1);
@@ -1200,6 +1208,7 @@ void evaluateMode() {
     tft.setTextColor(TFT_WHITE);
     tft.fillScreen(TFT_BLACK);
   }
+  tft.println(listenerDeviceName);
   tft.println(DeviceName);
   tft.println("-------------------");
   if (LAST_MSG == true) {
